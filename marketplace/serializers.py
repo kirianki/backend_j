@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from rest_framework_gis.fields import GeometryField
 from .models import Sector, Subcategory, ProviderProfile, PortfolioMedia, Review
+from django.db.models import Avg
 
 class SectorSerializer(serializers.ModelSerializer):
     class Meta:
@@ -19,12 +20,6 @@ class PortfolioMediaSerializer(serializers.ModelSerializer):
         model = PortfolioMedia
         fields = ['id', 'media_type', 'file', 'caption', 'uploaded_at']
 
-class BulkSectorSerializer(serializers.ListSerializer):
-    child = SectorSerializer()
-
-class BulkSubcategorySerializer(serializers.ListSerializer):
-    child = SubcategorySerializer()
-
 class ProviderProfileSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(read_only=True)
     user_id = serializers.IntegerField(source='user.id', read_only=True)
@@ -36,18 +31,22 @@ class ProviderProfileSerializer(serializers.ModelSerializer):
     subcategory_name = serializers.CharField(source='subcategory.name', read_only=True)
     location = GeometryField(required=False, allow_null=True)
     portfolio_media = serializers.SerializerMethodField()
-    average_rating = serializers.SerializerMethodField()
+    avg_rating = serializers.SerializerMethodField()
+    average_rating = serializers.SerializerMethodField()  # Keeping both for backward compatibility
 
     class Meta:
         model = ProviderProfile
         fields = [
-            'id', 'user_id', 'user_username', 'user_profile_picture', 'business_name', 'address', 'location', 
-            'sector', 'sector_name', 'subcategory', 'subcategory_name', 'description',
-            'website', 'county', 'subcounty', 'town', 'verification_document', 
-            'is_verified', 'tags', 'is_featured', 'membership_tier', 'portfolio_media', 
-            'updated_at', 'average_rating'
+            'id', 'user_id', 'user_username', 'user_profile_picture', 'business_name', 
+            'address', 'location', 'sector', 'sector_name', 'subcategory', 
+            'subcategory_name', 'description', 'website', 'county', 'subcounty', 
+            'town', 'verification_document', 'is_verified', 'tags', 'is_featured', 
+            'membership_tier', 'portfolio_media', 'updated_at', 'avg_rating', 'average_rating'
         ]
-        read_only_fields = ['id', 'user_id', 'user_username', 'user_profile_picture', 'is_verified', 'verification_document', 'average_rating']
+        read_only_fields = [
+            'id', 'user_id', 'user_username', 'user_profile_picture', 
+            'is_verified', 'verification_document', 'avg_rating', 'average_rating'
+        ]
 
     def get_user_profile_picture(self, obj):
         if not obj.user.profile_picture:
@@ -63,16 +62,30 @@ class ProviderProfileSerializer(serializers.ModelSerializer):
         media = obj.portfolio_media.all()
         return PortfolioMediaSerializer(media, many=True).data
 
-    def get_average_rating(self, obj):
+    def get_avg_rating(self, obj):
+        if hasattr(obj, 'avg_rating'):
+            return obj.avg_rating
         return obj.average_rating
+
+    def get_average_rating(self, obj):
+        return self.get_avg_rating(obj)
+
 class ReviewSerializer(serializers.ModelSerializer):
     provider_name = serializers.CharField(source='provider.business_name', read_only=True)
     client_username = serializers.CharField(source='client.username', read_only=True)
+    provider_avg_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Review
         fields = [
             'id', 'provider', 'provider_name', 'client', 'client_username', 
-            'rating', 'comment', 'provider_response', 'created_at', 'is_approved', 'upvotes', 'downvotes'
+            'rating', 'comment', 'provider_response', 'created_at', 
+            'is_approved', 'upvotes', 'downvotes', 'provider_avg_rating'
         ]
-        read_only_fields = ['id', 'client', 'created_at', 'is_approved', 'upvotes', 'downvotes']
+        read_only_fields = [
+            'id', 'client', 'created_at', 'is_approved', 
+            'upvotes', 'downvotes', 'provider_avg_rating'
+        ]
+
+    def get_provider_avg_rating(self, obj):
+        return obj.provider.average_rating
